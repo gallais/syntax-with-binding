@@ -31,7 +31,7 @@ import Generic
 -- UNTYPED LAMBDA CALCULUS
 -------------------------------------------------------------
 
-type Term = Fix' TmF Scope'
+type Term = Syntax Variable TmF
 
 data TmF (r :: ((* -> *) -> (* -> *)) -> (* -> *))
          (s :: (* -> *) -> (* -> *))
@@ -54,7 +54,7 @@ pattern TmL' t   = Fix (L (Scope t))
 -- UNTYPED LAMBDA CALCULUS WITH UNIT, SUMS, AND FIXPOINTS
 -------------------------------------------------------------
 
-type Case = Fix' CsF Scope'
+type Case = Syntax Variable CsF
 
 data CsF (r :: ((* -> *) -> (* -> *)) -> (* -> *))
          (s :: (* -> *) -> (* -> *))
@@ -101,7 +101,7 @@ pattern CsLA' f   = Fix (LA (Scope f))
 -------------------------------------------------------------
 
 
-type TT = Fix Fin TTF (Scope Fin)
+type TT = Syntax Fin TTF
 
 data TTF (r :: ((Natural -> *) -> (Natural -> *)) -> (Natural -> *))
          (s :: (Natural -> *) -> (Natural -> *))

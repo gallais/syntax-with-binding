@@ -58,6 +58,7 @@ data Fix (v :: i -> *) f (s :: (i -> *) -> (i -> *)) (a :: i) :: * where
    Fix :: f (Fix v f) s a -> Fix v f s a
 
 type Fix' = Fix Variable
+type Syntax j t = Fix j t (Scope j)
 
 pattern MkVar a = Var (Variable a)
 
@@ -80,10 +81,10 @@ class Eval j t e v where
   eval' :: Proxy e -> (j a -> e b) -> t a -> v b
   eval' _ = eval
 
-instance (VarLike j, HigherFunctor j e, SyntaxWithBinding t, Alg j t e v) => Eval j (Fix j t (Scope j)) e v where
+instance (VarLike j, HigherFunctor j e, SyntaxWithBinding t, Alg j t e v) => Eval j (Syntax j t) e v where
   eval = go where
 
-    go :: forall a b. (j a -> e b) -> Fix j t (Scope j) a -> v b
+    go :: forall a b. (j a -> e b) -> Syntax j t a -> v b
     go rho (Var a) = ret (Proxy :: Proxy j) (Proxy :: Proxy t) $ rho a
     go rho (Fix t) = alg (Proxy :: Proxy j)
                          $ reindex scope
@@ -98,30 +99,30 @@ instance (VarLike j, HigherFunctor j e, SyntaxWithBinding t, Alg j t e v) => Eva
 -- RENAMING
 -------------------------------------------------------------
 
-instance (VarLike j, SyntaxWithBinding t) => Alg j t j (Fix j t (Scope j)) where
+instance (VarLike j, SyntaxWithBinding t) => Alg j t j (Syntax j t) where
   ret _ _ = Var
   alg _ = Fix . reindex kripke scope runConst (\ f -> abstract id . kripke (f runConst))
 
 rename :: (VarLike j, HigherFunctor j j, SyntaxWithBinding t) =>
-          Fix j t (Scope j) a -> (j a -> j b) -> Fix j t (Scope j) b
+          Syntax j t a -> (j a -> j b) -> Syntax j t b
 rename = flip $ eval' (Proxy :: Proxy j)
 
-instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => HigherFunctor j (Fix j t (Scope j)) where
+instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => HigherFunctor j (Syntax j t) where
   hfmap = flip rename
 
 -------------------------------------------------------------
 -- Substitution
 -------------------------------------------------------------
 
-instance (VarLike j, SyntaxWithBinding t) => Alg j t (Fix j t (Scope j)) (Fix j t (Scope j)) where
+instance (VarLike j, SyntaxWithBinding t) => Alg j t (Syntax j t) (Syntax j t) where
   ret _ _ = id
   alg _ = Fix . reindex kripke scope runConst (\ f -> abstract Var . kripke (f runConst))
 
 subst :: (VarLike j, HigherFunctor j j, SyntaxWithBinding t) =>
-         Fix j t (Scope j) a -> (j a -> Fix j t (Scope j) b) -> Fix j t (Scope j) b
+         Syntax j t a -> (j a -> Syntax j t b) -> Syntax j t b
 subst = flip eval
 
-instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => RelativeMonad j (Fix j t (Scope j)) where
+instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => RelativeMonad j (Syntax j t) where
   rreturn = Var
   rbind   = subst
 
@@ -140,10 +141,10 @@ type Model' = Model Variable
 reflect :: j ~> Model j f
 reflect = Model . Var
 
-reify :: forall f j. (VarLike j, SyntaxWithBinding f) => Model j f ~> Fix j f (Scope j)
+reify :: forall f j. (VarLike j, SyntaxWithBinding f) => Model j f ~> Syntax j f
 reify = go . runModel where
 
-  go :: Fix j f (Kripke j (Model j f)) ~> Fix j f (Scope j)
+  go :: Fix j f (Kripke j (Model j f)) ~> Syntax j f
   go (Var a) = Var a
   go (Fix f) = Fix $ reindex kripke scope go
                      (\ g -> scope (g go) . abstract reflect)
@@ -152,7 +153,7 @@ reify = go . runModel where
 norm ::
   forall j t. (VarLike j,  HigherFunctor j (Model j t), SyntaxWithBinding t)
          => Alg j t (Model j t) (Model j t)
-         => Fix j t (Scope j) ~> Fix j t (Scope j)
+         => Syntax j t ~> Syntax j t
 norm = reify . eval' (Proxy :: Proxy (Model j t)) reflect
 
 
@@ -163,13 +164,13 @@ norm = reify . eval' (Proxy :: Proxy (Model j t)) reflect
 display ::
   forall j t m. (MonadState [String] m, VarLike j, SyntaxWithBinding t)
          => Alg j t (CONST String) (Compose m (CONST String))
-         => forall a. (j a -> String) -> Fix j t (Scope j) a -> m String
+         => forall a. (j a -> String) -> Syntax j t a -> m String
 display rho = fmap runCONST . runCompose . eval' (Proxy :: Proxy (CONST String)) (CONST . rho)
 
 display' ::
   forall t. SyntaxWithBinding t
          => Alg Fin t (CONST String) (Compose (State [String]) (CONST String))
-         => Fix Fin t (Scope Fin) 'Zero -> String
+         => Syntax Fin t 'Zero -> String
 display' = flip evalState names . display finZero
 
   where
