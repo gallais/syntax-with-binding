@@ -177,6 +177,43 @@ instance Functor CList where
   fmap f = over CList $ ($ f) . runCompose . eval' (Proxy :: Proxy Fin) finZero
 
 -------------------------------------------------------------
+-- NESTED SCOPES
+-------------------------------------------------------------
+
+type YTM = Syntax Fin YF
+
+data YF s r a :: * where
+  YA :: r s a -> r s a -> YF r s a
+  Y1 :: s (r s) a -> YF r s a
+  Y2 :: s (r s) a -> YF r s a
+
+pattern Y f = Fix (Y2 (Scope (Fix (Y1 (Scope f)))))
+
+instance SyntaxWithBinding YF where
+  reindex fs fs' r s e = case e of
+    YA f t -> YA (r f) (r t)
+    Y1 f   -> Y1 $ fs' runApply $ s (over Apply) $ fs Apply f
+    Y2 f   -> Y2 $ fs' runApply $ s (over Apply) $ fs Apply f
+
+instance MonadState [String]  m => Alg Fin YF (CONST String) (Compose m (CONST String)) where
+  ret _ _ = Compose . return
+  alg _ e = Compose $ case e of
+    YA f t -> do
+      fstr <- runCONST <$> (runCompose $ runConst f)
+      tstr <- runCONST <$> (runCompose $ runConst t)
+      return $ CONST $ concat [ "YA (", fstr, ") (", tstr, ")" ]
+    Y2 f -> do
+      (hd : tl) <- get
+      put tl
+      fstr <- runCONST <$> (runCompose $ runConst $ runKripke f id (CONST hd))
+      return $ CONST $ concat [ "mu ", hd, ". ", fstr ]
+    Y1 f -> do
+      (hd : tl) <- get
+      put tl
+      fstr <- runCONST <$> (runCompose $ runConst $ runKripke f id (CONST hd))
+      return $ CONST $ concat [ "lam ", hd, ". ", fstr ]
+
+-------------------------------------------------------------
 -- ALGEBRAS FOR NORMALISATION BY EVALUATION
 -------------------------------------------------------------
 
@@ -225,6 +262,25 @@ instance HigherFunctor Variable (Fix' CsF (Kripke' (Model' CsF))) where
       AP p    -> AP $ hfmap f p
       UN      -> UN
 
+instance Alg Fin YF (Model Fin YF) (Model Fin YF) where
+  ret _ _ = id
+  alg _ e = Model $ case e of
+    YA f t -> case runModel (runConst f) of
+      (Fix (Y2 g)) -> case runModel (fixpoint $ kripke Model g) of
+        Fix (Y1 h) -> runKripke h id (runConst t)
+        _          -> error "IMPOSSIBLE: Y2 always preceded by Y1"
+      _    -> Fix $ (YA `on` runModel . runConst) f t
+    Y1 f   -> Fix $ Y1 $ kripke (runModel . runConst) f
+    Y2 f   -> Fix $ Y2 $ kripke (runModel . runConst) f
+
+instance HigherFunctor Fin (Fix Fin YF (Kripke Fin (Model Fin YF))) where
+  hfmap f e = case e of
+    Var a  -> Var $ f a
+    Fix e' -> Fix $ case e' of
+      YA g t -> (YA `on` hfmap f) g t
+      Y1 g   -> Y1 $ hfmap f g
+      Y2 g   -> Y2 $ hfmap f g
+
 -------------------------------------------------------------
 -- SHOW INSTANCES
 -------------------------------------------------------------
@@ -257,3 +313,4 @@ instance Show e => Show (Apply (CL e) n) where
 
 instance Show e => Show (CList e) where
   show = show . Apply . runCList
+

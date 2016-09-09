@@ -120,3 +120,16 @@ threefours = fmap (+1) twothrees
 
 threefours' :: [Integer]
 threefours' = take 10 $ toStream threefours
+
+-------------------------------------------------------------
+-- EXAMPLES FOR YF
+-------------------------------------------------------------
+
+yFalse :: YTM 'Zero
+yFalse = Y $ Var Z
+
+yFalse' :: YTM 'Zero
+yFalse' = Fix $ YA yFalse yFalse
+
+yFalse'' :: YTM 'Zero
+yFalse'' = norm yFalse'
