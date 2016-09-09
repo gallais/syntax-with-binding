@@ -132,6 +132,11 @@ instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => RelativeMonad j 
 
 newtype Model v f a = Model { runModel :: Fix v f (Kripke v (Model v f)) a }
 
+instance SyntaxWithBinding f => HigherFunctor j (Fix j f (Kripke j (Model j f))) where
+  hfmap f e = case e of
+      Var a  -> Var $ f a
+      Fix e' -> Fix $ reindex kripke kripke (hfmap f) (\ _ -> hfmap f) e'
+
 instance HigherFunctor j (Fix j f (Kripke j (Model j f))) =>
          HigherFunctor j (Model j f) where
   hfmap f (Model m) = Model (hfmap f m)

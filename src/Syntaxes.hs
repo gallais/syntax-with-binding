@@ -243,25 +243,6 @@ instance Alg Variable CsF (Model Variable CsF) (Model Variable CsF) where
       _          -> Fix $ AP $ pair cleanup p    
     UN      -> Model $ Fix UN      
 
-instance HigherFunctor Variable (Fix' TmF (Kripke' (Model' f))) where
-  hfmap f e = case e of
-    Var a  -> Var (f a)
-    Fix e' -> Fix $ case e' of
-      L b   -> L $ hfmap f b
-      A t u -> (A `on` hfmap f) t u
-
-instance HigherFunctor Variable (Fix' CsF (Kripke' (Model' CsF))) where
-  hfmap f e = case e of
-    Var a  -> Var $ f a
-    Fix e' -> Fix $ case e' of
-      LI t    -> LI $ hfmap f t
-      RI t    -> RI $ hfmap f t
-      CA t kp -> CA (hfmap f t) $ hfmap f kp
-      FX kp   -> FX $ hfmap f kp
-      LA kp   -> LA $ hfmap f kp
-      AP p    -> AP $ hfmap f p
-      UN      -> UN
-
 instance Alg Fin YF (Model Fin YF) (Model Fin YF) where
   ret _ _ = id
   alg _ e = Model $ case e of
@@ -272,14 +253,6 @@ instance Alg Fin YF (Model Fin YF) (Model Fin YF) where
       _    -> Fix $ (YA `on` runModel . runConst) f t
     Y1 f   -> Fix $ Y1 $ kripke (runModel . runConst) f
     Y2 f   -> Fix $ Y2 $ kripke (runModel . runConst) f
-
-instance HigherFunctor Fin (Fix Fin YF (Kripke Fin (Model Fin YF))) where
-  hfmap f e = case e of
-    Var a  -> Var $ f a
-    Fix e' -> Fix $ case e' of
-      YA g t -> (YA `on` hfmap f) g t
-      Y1 g   -> Y1 $ hfmap f g
-      Y2 g   -> Y2 $ hfmap f g
 
 -------------------------------------------------------------
 -- SHOW INSTANCES
