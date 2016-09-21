@@ -14,6 +14,7 @@
 
 module Utils where
 
+import Data.Function
 import Data.Functor.Classes
 import Control.Newtype
 
@@ -79,6 +80,8 @@ instance Newtype (Compose g f a) (g (f a)) where
 newtype Variable a = Variable { runVariable :: a }
 
 instance Show1 Variable where showsPrec1 = showsPrec
+instance Eq1 Variable where eq1 = (==) `on` runVariable
+instance Eq a => Eq (Variable a) where (==) = eq1
 deriving instance Show a => Show (Variable a)
 deriving instance Functor Variable
 deriving instance Foldable Variable
@@ -98,6 +101,7 @@ data Fin (n :: Natural) :: * where
   S :: Fin n -> Fin ('Succ n)
 
 deriving instance Show (Fin n)
+deriving instance Eq (Fin n)
 
 finZero :: Fin 'Zero -> forall a. a
 finZero k = case k of {}

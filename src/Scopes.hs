@@ -13,6 +13,7 @@ module Scopes where
 
 import Utils hiding (Compose)
 import Control.Newtype
+import Data.Function
 import Data.Functor.Compose
 import Data.Functor.Classes
 
@@ -72,6 +73,9 @@ scope = over Scope
 
 instance (Functor (Next j), Functor t) => Functor (Scope j t) where
   fmap f = over Scope (fmap (fmap f))
+
+instance (Eq1 (Compose t (Next j))) => Eq1 (Scope j t) where
+  eq1 = eq1 `on` Compose . runScope
 
 instance (Show1 (Next j), Show1 t, Functor t) => Show1 (Scope j t) where
   showsPrec1 i (Scope t) = showString "Scope { runScope = "

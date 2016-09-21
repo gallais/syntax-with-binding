@@ -57,6 +57,13 @@ type Syntax j t = Fix j t (Scope j)
 
 pattern MkVar a = Var (Variable a)
 
+instance (Eq1 v, Eq1 (f (Fix v f) s)) => Eq1 (Fix v f s) where
+  Var v `eq1` Var w = v `eq1` w
+  Fix t `eq1` Fix u = t `eq1` u
+  _     `eq1` _     = False
+instance (Eq1 v, Eq1 (f (Fix v f) s), Eq a) => Eq (Fix v f s a) where
+  (==) = eq1
+
 instance (Show1 v, Show1 (f (Fix v f) s)) => Show1 (Fix v f s) where
   showsPrec1 i e = case e of
     Var v -> showString "Var " . showsPrec1 (1+i) v

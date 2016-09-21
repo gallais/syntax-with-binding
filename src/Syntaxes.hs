@@ -13,6 +13,7 @@
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DeriveAnyClass        #-}
 
 module Syntaxes where
 
@@ -40,13 +41,19 @@ data TmF (r :: ((* -> *) -> (* -> *)) -> (* -> *))
   L :: s (r s) a      -> TmF r s a -- Lambda Abstraction
   A :: r s a -> r s a -> TmF r s a -- Application
 
-deriving instance (Eq1 (r s), Eq1 (s (r s))) => Eq1 (TmF r s)
-
 instance SyntaxWithBinding TmF where
   reindex r s e = case e of
     L b   -> L $ s b
     A f t -> A (r f) (r t)
 instance Functor Term where fmap = hfmap . over Variable
+
+instance (Eq1 (r s), Eq1 (s (r s))) => Eq1 (TmF r s) where
+  L b   `eq1` L b'    = b `eq1` b'
+  A f t `eq1` A f' t' = f `eq1` f' && t `eq1` t'
+  _     `eq1` _       = False
+
+instance (Eq1 (r s), Eq1 (s (r s)), Eq a) => Eq (TmF r s a) where
+  (==) = eq1
 
 pattern TmL t   = Fix (L t)
 pattern TmA f t = Fix (A f t)
