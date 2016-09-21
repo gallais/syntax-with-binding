@@ -39,13 +39,8 @@ import Scopes
 class SyntaxWithBinding
       (syn :: (((i -> *) -> (i -> *)) -> (i -> *))
            ->  ((i -> *) -> (i -> *)) -> (i -> *)) where
-  reindex :: (scp  ~~> scp)
-          -> (scp' ~~> scp')
-          -- Reindexing properties
-          -> (rec scp a -> rec' scp' a')
-          -> (forall f. (forall b b'. (rec scp b -> rec' scp' b')
-                                   -> f (rec scp) b -> f (rec' scp') b')
-                     -> scp (f (rec scp)) a -> scp' (f (rec' scp')) a')
+  reindex :: (rec scp a -> rec' scp' a')
+          -> (scp (rec scp) a -> scp' (rec' scp') a')
           -> syn rec scp a -> syn rec' scp' a'
 
 
@@ -87,11 +82,9 @@ instance (VarLike j, HigherFunctor j e, SyntaxWithBinding t, Alg j t e v) => Eva
     go :: forall a b. (j a -> e b) -> Syntax j t a -> v b
     go rho (Var a) = ret (Proxy :: Proxy j) (Proxy :: Proxy t) $ rho a
     go rho (Fix t) = alg (Proxy :: Proxy j)
-                         $ reindex scope
-                                   kripke
-                                   (Const . go rho)
-                                   (\ g b -> Kripke $ \ i e ->
-                                             g (Const . go (inspect e (hfmap i . rho)))
+                         $ reindex (Const . go rho)
+                                   (\ b -> Kripke $ \ i e ->
+                                             (Const . go (inspect e (hfmap i . rho)))
                                              $ runScope b)
                                    t
 
@@ -101,7 +94,7 @@ instance (VarLike j, HigherFunctor j e, SyntaxWithBinding t, Alg j t e v) => Eva
 
 instance (VarLike j, SyntaxWithBinding t) => Alg j t j (Syntax j t) where
   ret _ _ = Var
-  alg _ = Fix . reindex kripke scope runConst (\ f -> abstract id . kripke (f runConst))
+  alg _ = Fix . reindex runConst (abstract' id)
 
 rename :: (VarLike j, HigherFunctor j j, SyntaxWithBinding t) =>
           Syntax j t a -> (j a -> j b) -> Syntax j t b
@@ -116,7 +109,7 @@ instance (VarLike j, HigherFunctor j j, SyntaxWithBinding t) => HigherFunctor j 
 
 instance (VarLike j, SyntaxWithBinding t) => Alg j t (Syntax j t) (Syntax j t) where
   ret _ _ = id
-  alg _ = Fix . reindex kripke scope runConst (\ f -> abstract Var . kripke (f runConst))
+  alg _ = Fix . reindex runConst (abstract' Var)
 
 subst :: (VarLike j, HigherFunctor j j, SyntaxWithBinding t) =>
          Syntax j t a -> (j a -> Syntax j t b) -> Syntax j t b
@@ -135,7 +128,7 @@ newtype Model v f a = Model { runModel :: Fix v f (Kripke v (Model v f)) a }
 instance SyntaxWithBinding f => HigherFunctor j (Fix j f (Kripke j (Model j f))) where
   hfmap f e = case e of
       Var a  -> Var $ f a
-      Fix e' -> Fix $ reindex kripke kripke (hfmap f) (\ _ -> hfmap f) e'
+      Fix e' -> Fix $ reindex (hfmap f) (hfmap f) e'
 
 instance HigherFunctor j (Fix j f (Kripke j (Model j f))) =>
          HigherFunctor j (Model j f) where
@@ -151,9 +144,7 @@ reify = go . runModel where
 
   go :: Fix j f (Kripke j (Model j f)) ~> Syntax j f
   go (Var a) = Var a
-  go (Fix f) = Fix $ reindex kripke scope go
-                     (\ g -> scope (g go) . abstract reflect)
-                     f
+  go (Fix f) = Fix $ reindex go (scope go . abstract reflect) f
 
 norm ::
   forall j t. (VarLike j,  HigherFunctor j (Model j t), SyntaxWithBinding t)

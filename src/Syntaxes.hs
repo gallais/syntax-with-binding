@@ -40,9 +40,11 @@ data TmF (r :: ((* -> *) -> (* -> *)) -> (* -> *))
   L :: s (r s) a      -> TmF r s a -- Lambda Abstraction
   A :: r s a -> r s a -> TmF r s a -- Application
 
+deriving instance (Eq1 (r s), Eq1 (s (r s))) => Eq1 (TmF r s)
+
 instance SyntaxWithBinding TmF where
-  reindex fs fs' r s e = case e of
-    L b   -> L $ fs' runApply $ s (over Apply) $ fs Apply b
+  reindex r s e = case e of
+    L b   -> L $ s b
     A f t -> A (r f) (r t)
 instance Functor Term where fmap = hfmap . over Variable
 
@@ -50,51 +52,6 @@ pattern TmL t   = Fix (L t)
 pattern TmA f t = Fix (A f t)
 
 pattern TmL' t   = Fix (L (Scope t))
--------------------------------------------------------------
--- UNTYPED LAMBDA CALCULUS WITH UNIT, SUMS, AND FIXPOINTS
--------------------------------------------------------------
-
-type Case = Syntax Variable CsF
-
-data CsF (r :: ((* -> *) -> (* -> *)) -> (* -> *))
-         (s :: (* -> *) -> (* -> *))
-         (a :: *)
-         :: * where
-  LI :: r s a -> CsF r s a                     -- Left  Injection
-  RI :: r s a -> CsF r s a                     -- Right Injection
-  CA :: r s a -> s (Pair (r s)) a -> CsF r s a -- Case  Analysis
-  FX :: s (r s) a -> CsF r s a                 -- Fixpoint Operator
-  LA :: s (r s) a -> CsF r s a                 -- Lambda Abstraction
-  AP :: Pair (r s) a -> CsF r s a              -- Application
-  UN :: CsF r s a                              -- Unit
-
-instance SyntaxWithBinding CsF where
-  reindex fs fs' r s e = case e of
-    LI t   -> LI $ r t
-    RI t   -> RI $ r t
-    CA c b -> CA (r c) $ s pair b
-    FX f   -> FX $ fs' runApply $ s (over Apply) $ fs Apply f
-    LA b   -> LA $ fs' runApply $ s (over Apply) $ fs Apply b
-    AP p   -> AP $ pair r p
-    UN     -> UN
-
-instance Functor Case where fmap = hfmap . over Variable
-
-pattern CsLI t   = Fix (LI t)
-pattern CsRI t   = Fix (RI t)
-pattern CsCA t b = Fix (CA t b)
-pattern CsFX f   = Fix (FX f)
-pattern CsLA f   = Fix (LA f)
-pattern CsAP f t = Fix (AP (Pair (f, t)))
-pattern CsUN     = Fix UN
-
-pattern CsCA' t b = Fix (CA t (Scope b))
-pattern CsFX' f   = Fix (FX (Scope f))
-pattern CsLA' f   = Fix (LA (Scope f))
-
-($$) :: Case a -> Case a -> Case a
-($$) f t = CsAP f t
-
 
 -------------------------------------------------------------
 -- MINI TT
@@ -112,9 +69,9 @@ data TTF (r :: ((Natural -> *) -> (Natural -> *)) -> (Natural -> *))
   (:$) :: r s a -> r s a -> TTF r s a
 
 instance SyntaxWithBinding TTF where
-  reindex fs fs' r s e = case e of
-    PI a b -> PI (r a) $ fs' runApply $ s (over Apply)  $ fs Apply b
-    LM b   -> LM $ fs' runApply $ s (over Apply) $ fs Apply b
+  reindex r s e = case e of
+    PI a b -> PI (r a) $ s b
+    LM b   -> LM $ s b
     f :$ t -> ((:$) `on` r) f t
 
 pattern TTPI a b = Fix (PI a b)
@@ -136,9 +93,9 @@ data CLF (e :: *) -- element type
 type CL e = Fix Fin (CLF e) (Scope Fin)
 
 instance SyntaxWithBinding (CLF e) where
-  reindex fs fs' _ s e = case e of
+  reindex _ s e = case e of
     NIL      -> NIL
-    hd :< tl -> hd :< (fs' runApply $ s (over Apply) $ fs Apply tl)
+    hd :< tl -> hd :< s tl
 
 pattern CLNIL       = Fix NIL
 pattern CLCON  e es = Fix (e :< es)
@@ -190,10 +147,10 @@ data YF s r a :: * where
 pattern Y f = Fix (Y2 (Scope (Fix (Y1 (Scope f)))))
 
 instance SyntaxWithBinding YF where
-  reindex fs fs' r s e = case e of
+  reindex r s e = case e of
     YA f t -> YA (r f) (r t)
-    Y1 f   -> Y1 $ fs' runApply $ s (over Apply) $ fs Apply f
-    Y2 f   -> Y2 $ fs' runApply $ s (over Apply) $ fs Apply f
+    Y1 f   -> Y1 $ s f
+    Y2 f   -> Y2 $ s f
 
 instance MonadState [String]  m => Alg Fin YF (CONST String) (Compose m (CONST String)) where
   ret _ _ = Compose . return
@@ -224,24 +181,6 @@ instance Alg Variable TmF (Model Variable TmF) (Model Variable TmF) where
     A f t -> case runModel (runConst t) of
       Fix (L b) -> Model $ runKripke b id (runConst t)
       _         -> Model $ Fix $ (A `on` runModel . runConst) f t
-
-instance Alg Variable CsF (Model Variable CsF) (Model Variable CsF) where
-  ret _ _ = id
-  alg _ e =
-    let cleanup = runModel . runConst
-    in case e of
-    LI t    -> Model $ Fix $ LI $ cleanup t
-    RI t    -> Model $ Fix $ RI $ cleanup t
-    CA f kp -> case cleanup f of
-      CsLI l -> runConst $ first  $ runKripke kp id $ Model l 
-      CsRI r -> runConst $ second $ runKripke kp id $ Model r
-      f'     -> Model $ Fix $ CA f' $ kripke (pair cleanup) kp
-    FX kp   -> fixpoint $ kripke runConst kp
-    LA b    -> Model $ Fix $ LA $ kripke cleanup b
-    AP p    -> Model $ case cleanup (first p) of
-      Fix (LA b) -> runKripke b id (runConst $ second p)
-      _          -> Fix $ AP $ pair cleanup p    
-    UN      -> Model $ Fix UN      
 
 instance Alg Fin YF (Model Fin YF) (Model Fin YF) where
   ret _ _ = id
