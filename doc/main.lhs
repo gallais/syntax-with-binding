@@ -33,7 +33,7 @@
 \usepackage{todonotes}
 \usepackage{mathpartir}
 %include lhs2TeX.fmt
-
+%include forall.fmt
 \newcommand{\cL}{{\cal L}}
 
 \begin{document}
@@ -62,6 +62,9 @@
            {Radboud University, Nijmegen}
            {gallais@@cs.ru.nl}
 
+
+%format kind = "\mathbf{kind}"
+
 \maketitle
 
 \begin{abstract}
@@ -84,10 +87,16 @@ researcher formalising a calculus face similar challenges: they
 both need to (re)implement common traversals such as renaming,
 subtitution, or an evaluation procedure.
 
-
+\todo{LAWS!!!}
 \begin{hide}
 
+> {-# LANGUAGE RankNTypes     #-}
+> {-# LANGUAGE DeriveFunctor  #-}
+> {-# LANGUAGE PolyKinds      #-}
+> {-# LANGUAGE KindSignatures #-}
+> {-# LANGUAGE TypeOperators  #-}
 > import Data.Function
+> import Data.Tuple
 
 \end{hide}
 
@@ -185,7 +194,161 @@ indeed exists.
 \cite{swierstra2008data}
 \todo{caveats: inductive fragment, total functions}
 
-\subsection{Examples}
+\subsection{Datatypes as Fixpoints of Functors}
+
+> data Partial e a = Error e | Result a
+> partial :: (e -> b) -> (a -> b) -> Partial e a -> b
+> partial error result p = case p of
+>   Error e  -> error e
+>   Result a -> result a
+> results :: Partial e a -> [a]
+> results = partial (const []) pure
+>
+> data BTree a = Leaf a | Node (BTree a) (BTree a)
+> btree :: (a -> b) -> (b -> b -> b) -> BTree a -> b
+> btree leaf node t = case t of
+>   Leaf a    -> leaf a
+>   Node l r  -> (node `on` btree leaf node) l r
+> 
+> leafs :: BTree a -> [a]
+> leafs = btree pure (++)
+
+> data Knot f = Knot (f (Knot f))
+> knot :: Functor f => (f r -> r) -> Knot f -> r
+> knot alg (Knot t) = alg $ fmap (knot alg) t
+
+> data PartialF e a r = ErrorF e | ResultF a
+>   deriving Functor
+> type Partial' e a = Knot (PartialF e a)
+> 
+> partial' :: (e -> b) -> (a -> b) -> Partial' e a -> b
+> partial' error result = knot $ \ p -> case p of
+>   ErrorF e   -> error e
+>   ResultF r  -> result r
+>
+> data BTreeF a r = LeafF a | NodeF r r
+>   deriving Functor
+> type BTree' a = Knot (BTreeF a)
+>
+> btree' :: (a -> b) -> (b -> b -> b) -> BTree' a -> b
+> btree' leaf node = knot $ \ t -> case t of
+>   LeafF a    -> leaf a
+>   NodeF l r  -> node l r
+
+\subsection{Non-Regular Datatypes and the Functor Category}
+
+> data CBTree a = CLeaf a | CNode (CBTree (a, a))
+>   deriving Show
+> cbtree  :: (forall a. a -> b a) ->  (forall a. b (a, a) -> b a)
+>         -> CBTree a -> b a
+> cbtree cleaf cnode t = case t of
+>   CLeaf a -> cleaf a
+>   CNode n -> cnode (cbtree cleaf cnode n)
+>
+> cleafs :: CBTree a -> [a]
+> cleafs = cbtree pure $ concatMap $ \(l,r) -> [l,r]
+
+%format ~> = "\rightsquigarrow"
+
+In the functor category, natural transformations are the appropriate
+notion of morphism between two functors. We introduce a type operator
+|(~>)| to denote those and define the |HFunctor| class (for ``Higher
+Functor'') to represent functors between functors. \todo{discuss kinds, *}
+
+> type (~>) s t = forall a. s a -> t a
+>
+> class HFunctor (f :: (i -> *) -> (i -> *)) where
+>   hfmap :: (s ~> t) -> (f s ~> f t)
+
+One can, again, define the fixpoint of these higher functors
+and they too come with an appropriate notion of fold: it turns
+an algebra (a natural transformation |f b ~> b|) into an
+iterator (a natural transformation |HKnot f ~> b|).
+
+> data HKnot f a = HKnot (f (HKnot f) a)
+> hknot :: HFunctor f => (f b ~> b) -> HKnot f ~> b
+> hknot alg (HKnot t) = alg $ hfmap (hknot alg) t
+>
+> data CBTreeF r a = CLeafF a | CNodeF (r (a, a))
+> type CBTree' a = HKnot CBTreeF a
+> instance HFunctor CBTreeF where
+>   hfmap f t = case t of
+>     CLeafF a  -> CLeafF a
+>     CNodeF n  -> CNodeF $ f n
+> 
+> cbtree'  :: (forall a. a -> b a) -> (forall a. b (a, a) -> b a)
+>          -> CBTree' ~> b
+> cbtree' leaf node = hknot $ \ t -> case t of
+>   CLeafF a  -> leaf a
+>   CNodeF n  -> node n
+
+
+We have seen that describing recursive types as the fixpoints
+of endofunctors makes it possible to provide generic functions
+manipulating them. Depending which category these endofunctors
+are based on, the expressive power varies: Set is good enough
+for the most basic inductive types whilst more complex ones
+(such as non-regular datatypes) are captured by more complex
+categories (such as the functor one).
+
+\section{Syntaxes with Binding as Fixpoints}
+
+The fundamental structure of a syntax with binding is not only
+given by a notion of recursive positions serving as placeholders
+for subterms but also a notion of scope-transformations which
+are invoked when describing a binder: they take the current
+scope and extend it with a fresh variable.
+
+To make this structure explicit we introduce the following
+|kind| synonyms. This is not valid Haskell code\footnote{The
+@TypeInType@ ghc language extension does allow to define
+something similar by merging the notions of type and kind.}
+but it will hopefully help the reader by breaking down an
+otherwise enormous kind signature into smaller, understandable
+chunks.
+
+> kind Scoped   i = i -> *
+
+A |Scoped i| type is a type indexed by a kind |i| which represents
+the scope of the variables it may refer to. Through the litterature
+we mainly find three different kind used for |i|.
+
+First of all, |*| itself is used in Altenkirch and Reus' seminal
+paper~\cite{altenkirch1999monadic}. Variables are inhabitants of
+the index type which means that the empty type can be used to
+guarantee that a term is closed and that the |Maybe| type constructor
+is the right notion of scope-extension: |Maybe a| has exactly one
+more inhabitant than |a|.
+
+Secondly, given that |*| is typically used in a finitary manner
+(every term is notionally indexed by |Maybe^n Void| for some n,
+one can make this explicit by using |Nat| instead. Variables in
+an |n|-term then correspond to inhabitants of the |Fin n| family,
+an inductive family~\cite{dybjer1991inductive} which has exactly
+|n| inhabitants.
+
+Finally, well-typed approaches may use a notion of scope with
+more structure. To represent the simply-typed lambda calculus,
+one will typically use |[Type]| where |Type| is a datatype
+describing the simple types this language uses. Variables are
+positions in such a list, the empty list is used for closed terms
+and consing a |Type| on top of an existing list gives the appropriate
+notion of scope-extension a binder requires.
+
+> kind ScopedT  i = Scoped i -> Scoped i
+> newtype Body t a = Body { runBody :: t (Maybe a) }
+
+A scoped-transformer |ScopedT i| is a function turning a
+|Scoped i| type into another one. A typical example of a
+|ScopedT *| is the |Body| type.
+
+> kind Syntax   i = ScopedT i -> Scoped i
+> kind SyntaxT  i = Syntax i -> Syntax i
+
+> class SyntaxWithBinding (t :: SyntaxT i) where
+>   reindex  ::  (r s a -> v w b)
+>            ->  (s (r s) a -> w (v w) b)
+>            ->  (t r s a -> t v w b)
 
 \paragraph{Untyped Lambda Calculus}
 
@@ -276,7 +439,7 @@ to retain information contained in @Y1@ so that it is made available
 when handling @Y2@.
 
 \todo{categorical structure}
-
+\todo{MiniAgda}
 
 The work mentioned in section~\ref{scopesem} and presented in the
 draft~\cite{allais2016type} is not limited to refactoring usual
